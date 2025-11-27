@@ -1,97 +1,91 @@
 #!/bin/bash
 
+log() {
+    echo
+    echo ">>> $1"
+    echo
+}
+
 fail() {
-    echo "ERROR: $1"
+    echo
+    echo "!!! ERROR: $1"
+    echo
     exit 1
 }
 
-# --------------------------
-# Variables
-# --------------------------
-JAVA_DIR="$HOME/.local/java"
-JAVA_BIN="$JAVA_DIR/bin/java"
-LAUNCHER_DIR="$HOME/.local/bin"
-LAUNCHER_PATH="$LAUNCHER_DIR/mclaunch"
-JAR_PATH="$HOME/LL.jar"
-JAVA_VERSION="17"
-DESKTOP_FILE="$HOME/.local/share/applications/mclaunch.desktop"
+log "Starting MCLaunch Installer (debug mode enabled)"
+log "System info:"
+uname -a
+echo "Home directory: $HOME"
+echo "PATH: $PATH"
 
 # --------------------------
-# Create necessary directories
+# apt update
 # --------------------------
-mkdir -p "$JAVA_DIR" "$LAUNCHER_DIR" "$(dirname "$DESKTOP_FILE")" || fail "Failed to create directories."
+log "Running: sudo apt update"
+sudo apt update || fail "apt update failed."
 
 # --------------------------
-# Install Java if missing
+# Install Java + X11
 # --------------------------
-if ! command -v java &>/dev/null || ! java -version 2>&1 | grep -q "$JAVA_VERSION"; then
-    echo "Java $JAVA_VERSION not found. Downloading OpenJDK..."
-    
-    # Example Adoptium OpenJDK 17 Linux x64
-    JDK_URL="https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jre_x64_linux_hotspot.tar.gz"
-    
-    TMP_TAR=$(mktemp)
-    wget -O "$TMP_TAR" "$JDK_URL" || fail "Failed to download Java."
-    
-    echo "Extracting Java..."
-    tar -xzf "$TMP_TAR" -C "$JAVA_DIR" --strip-components=1 || fail "Failed to extract Java."
-    rm "$TMP_TAR"
-    
-    echo "Java installed locally at $JAVA_DIR"
-else
-    JAVA_BIN=$(command -v java)
-    echo "Java $JAVA_VERSION already installed at $JAVA_BIN"
-fi
+log "Running: sudo apt install -y openjdk-17-jre x11-apps"
+sudo apt install -y openjdk-17-jre x11-apps || fail "Java or X11 install failed."
+
+# Verify Java installation
+log "Checking Java version:"
+java -version || fail "Java is installed but java -version failed."
 
 # --------------------------
 # Download LL.jar
 # --------------------------
-echo "Downloading LL.jar..."
-wget -O "$JAR_PATH" https://llaun.ch/jar || fail "Failed to download LL.jar."
-chmod +x "$JAR_PATH"
+log "Downloading LL.jar to $HOME/LL.jar"
+wget -v -O "$HOME/LL.jar" https://llaun.ch/jar || fail "Failed to download LL.jar."
+
+log "Setting permissions on LL.jar"
+chmod +x "$HOME/LL.jar" || fail "chmod failed on LL.jar."
 
 # --------------------------
-# Create launcher shortcut
+# Create launcher command
 # --------------------------
-echo "Creating mclaunch shortcut..."
-LAUNCHER_CONTENT="#!/bin/bash
-\"$JAVA_BIN\" -jar \"$JAR_PATH\""
+log "Creating launcher directory: $HOME/.local/bin"
+mkdir -pv "$HOME/.local/bin" || fail "Failed to create ~/.local/bin"
 
-echo "$LAUNCHER_CONTENT" > "$LAUNCHER_PATH" 2>/dev/null || \
-    echo "$LAUNCHER_CONTENT" | tee "$LAUNCHER_PATH" >/dev/null 2>&1 || \
-    (TMPFILE=$(mktemp) && echo "$LAUNCHER_CONTENT" > "$TMPFILE" && mv "$TMPFILE" "$LAUNCHER_PATH") || fail "Failed to create launcher."
+LAUNCHER_PATH="$HOME/.local/bin/mclaunch"
 
-chmod +x "$LAUNCHER_PATH"
+log "Creating launcher script at $LAUNCHER_PATH"
+cat > "$LAUNCHER_PATH" <<EOL
+#!/bin/bash
+echo ">>> Running MCLaunch..."
+java -jar "\$HOME/LL.jar"
+EOL
+
+log "Making launcher executable"
+chmod +x "$LAUNCHER_PATH" || fail "Failed to chmod launcher."
 
 # --------------------------
-# Add ~/.local/bin to PATH if missing
+# Add ~/.local/bin to PATH
 # --------------------------
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    echo "Adding $HOME/.local/bin to PATH in ~/.bashrc..."
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-    echo "You may need to run 'source ~/.bashrc' or restart your terminal."
+    log "~/.local/bin not in PATH — adding it to ~/.bashrc"
+
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc" || fail "Failed to write to ~/.bashrc"
+
+    log "NOTE: Restart the terminal or run 'source ~/.bashrc' for PATH update."
+else
+    log "~/.local/bin is already in PATH"
 fi
 
 # --------------------------
-# Create .desktop entry for Chrome OS launcher
+# Final message
 # --------------------------
-cat > "$DESKTOP_FILE" <<EOL
-[Desktop Entry]
-Name=MCLaunch
-Comment=Launch LL.jar Minecraft Launcher
-Exec=$LAUNCHER_PATH
-Icon=utilities-terminal
-Terminal=true
-Type=Application
-Categories=Game;
-EOL
+log "INSTALLATION COMPLETE!"
 
-chmod +x "$DESKTOP_FILE"
-echo "Desktop entry created! It should appear in the Chrome OS app launcher under 'Linux apps'."
-
-# --------------------------
-# Launch now
-# --------------------------
-echo "Setup complete! You can now run:"
+echo "You can now run the launcher using:"
+echo
 echo "    mclaunch"
-"$LAUNCHER_PATH"
+echo
+echo "Or manually:"
+echo
+echo "    java -jar \$HOME/LL.jar"
+echo
+echo "If something fails above, take a screenshot and send it to me."
